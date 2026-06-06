@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Padel Tracker" />
+  <meta name="theme-color" content="#0f1117" />
+  <title>Padel Tracker</title>
+
+  <!-- Icône iPhone (SVG inline converti en data URI) -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%230f1117'/%3E%3Ccircle cx='256' cy='256' r='180' fill='none' stroke='%23ffd700' stroke-width='18'/%3E%3Ccircle cx='256' cy='256' r='130' fill='none' stroke='%23ffd70066' stroke-width='8'/%3E%3Cline x1='76' y1='256' x2='436' y2='256' stroke='%23ffd700' stroke-width='12'/%3E%3Cline x1='256' y1='76' x2='256' y2='436' stroke='%23ffd700' stroke-width='12'/%3E%3Cellipse cx='256' cy='256' rx='180' ry='80' fill='none' stroke='%23ffd70044' stroke-width='6'/%3E%3Ctext x='256' y='310' text-anchor='middle' font-family='Arial Black,sans-serif' font-size='100' font-weight='900' fill='%23ffd700'%3EP%3C/text%3E%3C/svg%3E" />
+
+  <!-- Manifest PWA inline -->
+  <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Padel%20Tracker%22%2C%22short_name%22%3A%22Padel%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f1117%22%2C%22theme_color%22%3A%22%230f1117%22%7D" />
+
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #0f1117; color: #f0f0f0; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+    button { font-family: 'DM Sans', sans-serif; -webkit-appearance: none; }
+    input { -webkit-appearance: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .fade-in { animation: fadeIn 0.35s ease both; }
+    ::-webkit-scrollbar { width: 0; }
+
+    /* Safe area iPhone X+ */
+    #app { padding-bottom: env(safe-area-inset-bottom); }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// MINI FRAMEWORK RÉACTIF (sans dépendance externe)
+// ═══════════════════════════════════════════════════════════════
+let _state = {};
+let _render = () => {};
+
+function setState(patch) {
+  _state = typeof patch === 'function' ? patch(_state) : { ..._state, ...patch };
+  _render();
+}
+
+function getState() { return _state; }
+
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTES
+// ═══════════════════════════════════════════════════════════════
+const KEYS = ['P1','P2','P3','P4'];
+const TEAMS = { A:[0,1], B:[2,3] };
+const STAT_TYPES = [
+  { key:'winners',      label:'WINNER',          icon:'✦', color:'#00c47d', bg:'linear-gradient(135deg,#00c47d,#007a4d)', desc:'Coup gagnant direct' },
+  { key:'faultsDirect', label:'FAUTE DIRECTE',   icon:'✖', color:'#e84545', bg:'linear-gradient(135deg,#e84545,#a01515)', desc:'Filet / hors-jeu non provoqué' },
+  { key:'faultsForced', label:'FAUTE PROVOQUÉE', icon:'⚡', color:'#f5a623', bg:'linear-gradient(135deg,#f5a623,#b87000)', desc:'Erreur causée par un coup adverse' },
+];
+const PROFILE_STYLES = {
+  offensif:   { icon:'🔥', color:'#ff6b35' },
+  défensif:   { icon:'🛡️', color:'#4a9eff' },
+  équilibré:  { icon:'⚖️', color:'#a78bfa' },
+  décisif:    { icon:'🎯', color:'#00c47d' },
+  irrégulier: { icon:'🎲', color:'#f5a623' },
+  solide:     { icon:'🧱', color:'#64748b' },
+  agressif:   { icon:'⚡', color:'#e84545' },
+  dominant:   { icon:'👑', color:'#ffd700' },
+};
+
+function profileStyle(profil) {
+  if (!profil) return { icon:'📋', color:'#888' };
+  const k = Object.keys(PROFILE_STYLES).find(k => profil.toLowerCase().includes(k));
+  return PROFILE_STYLES[k] || { icon:'📋', color:'#888' };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS DONNÉES
+// ═══════════════════════════════════════════════════════════════
+function initStats() {
+  return KEYS.reduce((a,k) => ({...a,[k]:{winners:0,faultsDirect:0,faultsForced:0}}), {});
+}
+function emptySet() { return {scoreA:0,scoreB:0,stats:initStats()}; }
+
+function totalStat(sets, key, type) {
+  return sets.reduce((s,set) => s + (set.stats[key]?.[type] ?? 0), 0);
+}
+function teamStat(stats, t, type) {
+  return TEAMS[t].reduce((s,i) => s + (stats[KEYS[i]]?.[type] ?? 0), 0);
+}
+function globalPlayer(sets, k) {
+  const w = totalStat(sets,k,'winners');
+  const fd = totalStat(sets,k,'faultsDirect');
+  const ff = totalStat(sets,k,'faultsForced');
+  const tot = w+fd+ff;
+  return { key:k, w, fd, ff, total:tot, pct: tot>0 ? Math.round(w/tot*100) : 0 };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ACTIONS
+// ═══════════════════════════════════════════════════════════════
+function updateStat(key, type) {
+  setState(s => {
+    const sets = s.sets.map((set,i) => i!==s.currentSet ? set : {
+      ...set, stats:{...set.stats,[key]:{...set.stats[key],[type]:set.stats[key][type]+1}}
+    });
+    return {sets};
+  });
+}
+function undoStat(key, type) {
+  setState(s => {
+    const sets = s.sets.map((set,i) => i!==s.currentSet ? set : {
+      ...set, stats:{...set.stats,[key]:{...set.stats[key],[type]:Math.max(0,set.stats[key][type]-1)}}
+    });
+    return {sets};
+  });
+}
+function updateScore(team, val) {
+  setState(s => {
+    const sets = s.sets.map((set,i) => i!==s.currentSet ? set : {...set,[team==='A'?'scoreA':'scoreB']:val});
+    return {sets};
+  });
+}
+function addSet() {
+  setState(s => ({ sets:[...s.sets,emptySet()], currentSet:s.sets.length }));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// API CLAUDE
+// ═══════════════════════════════════════════════════════════════
+async function runAIAnalysis() {
+  const s = getState();
+  setState({ aiLoading:true, aiDone:false, aiResults:{} });
+
+  const setsDesc = s.sets.map((set,i) => `Set ${i+1}: Équipe A ${set.scoreA} - Équipe B ${set.scoreB}`).join(', ');
+  const playersDesc = KEYS.map(k => {
+    const g = globalPlayer(s.sets, k);
+    const team = TEAMS.A.includes(KEYS.indexOf(k)) ? 'A' : 'B';
+    return `${s.names[k]} (Équipe ${team}): ${g.w} winners, ${g.fd} fautes directes, ${g.ff} fautes provoquées, efficacité ${g.pct}%`;
+  }).join('\n');
+
+  const prompt = `Tu es un coach de padel expert. Voici les statistiques d'un match :
+
+Résultats par set : ${setsDesc}
+
+Statistiques des joueurs :
+${playersDesc}
+
+Pour chaque joueur, fournis une analyse de son match en te basant sur ces ratios et les profils typiques du padel.
+
+Rappels padel : un bon ratio winners/(fautes directes) indique un joueur décisif. Beaucoup de fautes directes = manque de contrôle. Beaucoup de fautes provoquées = l'adversaire est sous pression mais le joueur subit. Un winner élevé avec peu de fautes = joueur dominant ou décisif. Un faible total = joueur passif ou défensif.
+
+Réponds UNIQUEMENT en JSON valide (sans markdown, sans backticks), avec exactement cette structure :
+{"joueurs":[{"nom":"prénom exact","profil":"un mot (Offensif/Défensif/Équilibré/Décisif/Irrégulier/Solide/Agressif/Dominant)","analyse":"2-3 phrases style coach padel","conseil":"1 conseil concret"}]}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:1000, messages:[{role:'user',content:prompt}] })
+    });
+    const data = await res.json();
+    const text = (data.content||[]).map(b=>b.text||'').join('');
+    const clean = text.replace(/```json|```/g,'').trim();
+    const parsed = JSON.parse(clean);
+    const byName = {};
+    parsed.joueurs.forEach(j => { byName[j.nom] = j; });
+    const byKey = {};
+    KEYS.forEach(k => { byKey[k] = byName[s.names[k]?.trim()] || null; });
+    setState({ aiResults:byKey, aiLoading:false, aiDone:true });
+  } catch(e) {
+    console.error(e);
+    setState({ aiLoading:false });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMPOSANTS HTML (retournent des strings)
+// ═══════════════════════════════════════════════════════════════
+
+function Badge(value, color, small) {
+  const sz = small ? 'font-size:12px;padding:1px 6px;min-width:22px' : 'font-size:14px;padding:2px 8px;min-width:28px';
+  return `<span style="display:inline-block;${sz};border-radius:20px;font-weight:700;background:${color};color:#fff;text-align:center">${value}</span>`;
+}
+
+function renderSetup() {
+  const s = getState();
+  const allFilled = KEYS.every(k => s.names[k].trim().length > 0);
+  const teams = ['A','B'].map(team => {
+    const tc = team==='A' ? '#00c47d' : '#4a7fff';
+    const inputs = TEAMS[team].map(idx => {
+      const k = KEYS[idx];
+      const border = s.names[k].trim() ? tc+'88' : '#2a2a2a';
+      return `<input
+        data-input="${k}"
+        value="${escHtml(s.names[k])}"
+        placeholder="Joueur ${idx+1}"
+        maxlength="16"
+        style="display:block;width:100%;margin-bottom:10px;background:rgba(255,255,255,0.07);border:1.5px solid ${border};border-radius:10px;color:#fff;font-family:DM Sans,sans-serif;font-size:16px;padding:12px 14px;outline:none;transition:border-color .2s"
+      />`;
+    }).join('');
+    return `<div style="margin-bottom:20px">
+      <div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:3px;color:${tc};margin-bottom:10px">▸ ÉQUIPE ${team}</div>
+      ${inputs}
+    </div>`;
+  }).join('');
+
+  return `<div style="max-width:420px;margin:0 auto;padding:36px 20px 60px">
+    <div style="font-family:Bebas Neue,sans-serif;font-size:52px;letter-spacing:6px;color:#ffd700;line-height:1">PADEL</div>
+    <div style="font-size:13px;color:#555;letter-spacing:2px;margin-bottom:6px">MATCH TRACKER</div>
+    <div style="height:1px;background:linear-gradient(90deg,#ffd70044,transparent);margin-bottom:28px"></div>
+    <p style="color:#666;font-size:13px;margin-bottom:24px">Entrez le prénom des 4 joueurs avant de commencer.</p>
+    ${teams}
+    <button onclick="handleStart()" style="width:100%;margin-top:8px;background:${allFilled?'linear-gradient(135deg,#ffd700,#e6a800)':'#1e1e1e'};border:none;border-radius:12px;color:${allFilled?'#111':'#333'};font-family:Bebas Neue,sans-serif;font-size:22px;letter-spacing:3px;padding:16px;cursor:${allFilled?'pointer':'default'};transition:background .3s">
+      ${allFilled ? '▶ DÉMARRER LE MATCH' : 'REMPLISSEZ LES 4 NOMS'}
+    </button>
+  </div>`;
+}
+
+function renderMatch() {
+  const s = getState();
+  const cur = s.sets[s.currentSet];
+  const dn = k => escHtml(s.names[k]?.trim() || k);
+
+  // Onglets sets
+  const tabs = s.sets.map((_,i) => {
+    const active = i===s.currentSet;
+    return `<button onclick="setState({currentSet:${i}})" style="background:${active?'#ffd700':'rgba(255,255,255,0.07)'};border:none;border-radius:8px;color:${active?'#111':'#666'};font-family:Bebas Neue,sans-serif;font-size:14px;letter-spacing:1px;padding:6px 14px;cursor:pointer">SET ${i+1}</button>`;
+  }).join('');
+
+  // Score
+  const scoreBlock = (team, score, label) => {
+    const names = TEAMS[team].map(i => dn(KEYS[i])).join(' / ');
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="font-size:10px;color:#aaa;letter-spacing:1px">${label}</span>
+      <span style="font-size:11px;color:#666;margin-bottom:2px">${names}</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button onclick="updateScore('${team}',Math.max(0,${score}-1))" style="width:28px;height:28px;border-radius:6px;border:1px solid #444;background:rgba(255,255,255,0.08);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">−</button>
+        <span style="font-family:Bebas Neue,sans-serif;font-size:32px;min-width:28px;text-align:center">${score}</span>
+        <button onclick="updateScore('${team}',${score}+1)" style="width:28px;height:28px;border-radius:6px;border:1px solid #444;background:rgba(255,255,255,0.08);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">+</button>
+      </div>
+    </div>`;
+  };
+
+  // Cartes joueurs
+  const teamBlocks = ['A','B'].map(team => {
+    const tc = team==='A' ? '#00c47d' : '#4a7fff';
+    const cards = TEAMS[team].map(idx => {
+      const k = KEYS[idx];
+      const st = cur.stats[k];
+      const btns = STAT_TYPES.map(({key,label,icon,bg}) => {
+        const disabled = st[key]===0;
+        return `<div style="display:flex;align-items:center;gap:6px">
+          <button onclick="updateStat('${k}','${key}')" style="flex:1;background:${bg};border:none;border-radius:8px;color:#fff;font-family:Bebas Neue,sans-serif;font-size:12px;letter-spacing:1px;padding:8px 4px;cursor:pointer;text-align:center;line-height:1.3">
+            ${icon} ${label}<br/><span style="font-size:20px">${st[key]}</span>
+          </button>
+          <button onclick="undoStat('${k}','${key}')" ${disabled?'disabled':''} style="width:24px;height:24px;border-radius:6px;border:1px solid #333;background:rgba(255,255,255,0.06);color:${disabled?'#333':'#888'};font-size:14px;cursor:${disabled?'default':'pointer'};flex-shrink:0">↩</button>
+        </div>`;
+      }).join('');
+      return `<div style="background:rgba(255,255,255,0.055);border:1.5px solid ${tc}40;border-radius:14px;padding:12px 12px 10px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="width:9px;height:9px;border-radius:50%;background:${tc};flex-shrink:0"></span>
+          <span style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:2px;color:${tc};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px">${dn(k)}</span>
+        </div>
+        ${btns}
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:18px">
+      <div style="font-family:Bebas Neue,sans-serif;font-size:15px;letter-spacing:3px;color:${tc};margin-bottom:8px">▸ ÉQUIPE ${team} — ${TEAMS[team].map(i=>dn(KEYS[i])).join(' & ')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${cards}</div>
+    </div>`;
+  }).join('');
+
+  // Résumé set
+  const resumeCols = STAT_TYPES.map(({key,icon,color,label}) =>
+    `<div style="flex:1;min-width:80px">
+      <div style="font-size:10px;color:${color};margin-bottom:4px">${icon} ${label.split(' ')[0]}</div>
+      ${['A','B'].map(t=>`<div style="font-size:12px;color:#555"><span style="color:${t==='A'?'#00c47d':'#4a7fff'}">Éq.${t}</span> <span style="color:#aaa;font-weight:600">${teamStat(cur.stats,t,key)}</span></div>`).join('')}
+    </div>`
+  ).join('');
+
+  return `<div style="max-width:480px;margin:0 auto;padding:18px 14px 60px">
+    <!-- Header -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div>
+        <span style="font-family:Bebas Neue,sans-serif;font-size:28px;letter-spacing:4px;color:#ffd700">PADEL</span>
+        <span style="font-family:Bebas Neue,sans-serif;font-size:13px;color:#333;letter-spacing:2px;margin-left:8px">TRACKER</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="setState({view:'setup'})" style="background:transparent;border:1px solid #222;border-radius:8px;color:#555;font-family:Bebas Neue,sans-serif;font-size:12px;letter-spacing:1px;padding:6px 10px;cursor:pointer">⚙ NOMS</button>
+        <button onclick="setState({view:'analysis'})" style="background:linear-gradient(135deg,#ffd700,#e6a800);border:none;border-radius:8px;color:#111;font-family:Bebas Neue,sans-serif;font-size:13px;letter-spacing:1px;padding:7px 13px;cursor:pointer">📊 ANALYSE</button>
+      </div>
+    </div>
+    <!-- Légende -->
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      ${STAT_TYPES.map(({icon,label,color,desc})=>`<div style="font-size:10px;color:#444;display:flex;gap:4px;align-items:center"><span style="color:${color};font-weight:700">${icon}</span><span style="color:#555">${label.split(' ')[0]} = ${desc}</span></div>`).join('')}
+    </div>
+    <!-- Sets tabs -->
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+      ${tabs}
+      <button onclick="addSet()" style="background:rgba(255,255,255,0.04);border:1px dashed #333;border-radius:8px;color:#555;font-family:Bebas Neue,sans-serif;font-size:14px;padding:5px 12px;cursor:pointer">+ SET</button>
+    </div>
+    <!-- Score -->
+    <div style="background:rgba(255,255,255,0.05);border-radius:14px;padding:14px 16px;display:flex;justify-content:space-around;align-items:center;margin-bottom:18px">
+      ${scoreBlock('A',cur.scoreA,'ÉQUIPE A')}
+      <span style="font-family:Bebas Neue,sans-serif;font-size:32px;color:#333">VS</span>
+      ${scoreBlock('B',cur.scoreB,'ÉQUIPE B')}
+    </div>
+    <!-- Joueurs -->
+    ${teamBlocks}
+    <!-- Résumé -->
+    <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:12px 14px">
+      <div style="font-size:10px;color:#333;letter-spacing:1px;margin-bottom:8px">RÉSUMÉ SET ${s.currentSet+1}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${resumeCols}</div>
+    </div>
+  </div>`;
+}
+
+function renderAnalysis() {
+  const s = getState();
+  const dn = k => escHtml(s.names[k]?.trim() || k);
+  const global = KEYS.map(k => globalPlayer(s.sets, k));
+
+  // Résumé équipes
+  const teamCards = ['A','B'].map(t => {
+    const tc = t==='A' ? '#00c47d' : '#4a7fff';
+    const tot = {
+      w:  TEAMS[t].reduce((a,i)=>a+totalStat(s.sets,KEYS[i],'winners'),0),
+      fd: TEAMS[t].reduce((a,i)=>a+totalStat(s.sets,KEYS[i],'faultsDirect'),0),
+      ff: TEAMS[t].reduce((a,i)=>a+totalStat(s.sets,KEYS[i],'faultsForced'),0),
+    };
+    const setScores = s.sets.map((set,i)=>`<span style="margin-right:6px">Set ${i+1}: <strong style="color:#bbb">${t==='A'?set.scoreA:set.scoreB}</strong></span>`).join('');
+    return `<div style="background:${tc}12;border:1.5px solid ${tc}44;border-radius:14px;padding:14px">
+      <div style="font-family:Bebas Neue,sans-serif;font-size:16px;color:${tc};margin-bottom:4px">ÉQUIPE ${t}</div>
+      <div style="font-size:12px;color:#777;margin-bottom:8px">${TEAMS[t].map(i=>dn(KEYS[i])).join(' / ')}</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span style="color:#00c47d">✦ Winners</span>${Badge(tot.w,'#00c47d')}</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span style="color:#e84545">✖ Fautes dir.</span>${Badge(tot.fd,'#e84545')}</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px"><span style="color:#f5a623">⚡ Fautes prov.</span>${Badge(tot.ff,'#f5a623')}</div>
+      <div style="font-size:12px;color:#555">${setScores}</div>
+    </div>`;
+  }).join('');
+
+  // Analyse IA
+  let aiSection = '';
+  const btnAI = s.aiLoading
+    ? `<button disabled style="background:#2a2a2a;border:none;border-radius:8px;color:#555;font-family:Bebas Neue,sans-serif;font-size:13px;letter-spacing:1px;padding:8px 16px">⏳ ANALYSE EN COURS…</button>`
+    : s.aiDone
+    ? `<button onclick="runAIAnalysis()" style="background:transparent;border:1px solid #333;border-radius:8px;color:#555;font-family:Bebas Neue,sans-serif;font-size:12px;letter-spacing:1px;padding:6px 12px;cursor:pointer">↺ RELANCER</button>`
+    : `<button onclick="runAIAnalysis()" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);border:none;border-radius:8px;color:#fff;font-family:Bebas Neue,sans-serif;font-size:13px;letter-spacing:1px;padding:8px 16px;cursor:pointer">✦ GÉNÉRER L'ANALYSE IA</button>`;
+
+  let aiCards = '';
+  if (s.aiLoading) {
+    aiCards = KEYS.map(k => {
+      const pi = KEYS.indexOf(k);
+      const tc = TEAMS.A.includes(pi) ? '#00c47d' : '#4a7fff';
+      return `<div style="background:rgba(255,255,255,0.03);border:1.5px solid ${tc}33;border-radius:16px;padding:16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:10px;height:10px;border-radius:50%;background:${tc}"></span>
+          <span style="font-family:Bebas Neue,sans-serif;font-size:20px;letter-spacing:2px;color:${tc}">${dn(k)}</span>
+          <span style="font-size:18px;display:inline-block;animation:spin 1s linear infinite">⏳</span>
+        </div>
+        <div style="font-size:13px;color:#444;font-style:italic">Analyse en cours…</div>
+      </div>`;
+    }).join('');
+  } else if (s.aiDone) {
+    aiCards = KEYS.map(k => {
+      const pi = KEYS.indexOf(k);
+      const tc = TEAMS.A.includes(pi) ? '#00c47d' : '#4a7fff';
+      const ai = s.aiResults[k];
+      const ps = profileStyle(ai?.profil);
+      const g = global.find(g=>g.key===k);
+      const profileBadge = ai?.profil
+        ? `<span style="background:${ps.color}22;border:1px solid ${ps.color}55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;color:${ps.color};letter-spacing:1px;text-transform:uppercase">${ps.icon} ${escHtml(ai.profil)}</span>`
+        : '';
+      const conseil = ai?.conseil
+        ? `<div style="background:rgba(255,255,255,0.05);border-radius:8px;padding:8px 12px;border-left:3px solid ${ps.color}">
+            <div style="font-size:10px;color:${ps.color};letter-spacing:1px">💡 CONSEIL</div>
+            <p style="font-size:12px;color:#aaa;margin:4px 0 0;line-height:1.5">${escHtml(ai?.conseil||'')}</p>
+           </div>`
+        : '';
+      return `<div class="fade-in" style="background:${ps.color}18;border:1.5px solid ${tc}33;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:10px;height:10px;border-radius:50%;background:${tc};flex-shrink:0"></span>
+            <span style="font-family:Bebas Neue,sans-serif;font-size:20px;letter-spacing:2px;color:${tc}">${dn(k)}</span>
+          </div>
+          ${profileBadge}
+        </div>
+        <div style="display:flex;gap:8px">
+          <span style="font-size:12px;color:#00c47d">✦ ${g.w}W</span>
+          <span style="font-size:12px;color:#e84545">✖ ${g.fd}FD</span>
+          <span style="font-size:12px;color:#f5a623">⚡ ${g.ff}FP</span>
+          <span style="font-size:12px;color:#555">| ${g.pct}% eff.</span>
+        </div>
+        <p style="font-size:13px;color:#ccc;line-height:1.6;margin:0">${escHtml(ai?.analyse||'')}</p>
+        ${conseil}
+      </div>`;
+    }).join('');
+  } else {
+    aiCards = `<div style="background:rgba(124,58,237,0.08);border:1px dashed #7c3aed44;border-radius:12px;padding:14px 16px;font-size:13px;color:#666">
+      Cliquez sur <strong style="color:#7c3aed">Générer l'analyse IA</strong> pour obtenir un profil détaillé de chaque joueur.
+    </div>`;
+  }
+
+  aiSection = `<div style="margin-bottom:28px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h3 style="font-family:Bebas Neue,sans-serif;letter-spacing:2px;color:#bbb;font-size:16px;margin:0">🤖 ANALYSE IA PAR JOUEUR</h3>
+      ${btnAI}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">${aiCards}</div>
+  </div>`;
+
+  // Détail par set
+  const setsDetail = s.sets.map((set,si) => {
+    const rows = KEYS.map((k,pi)=>{
+      const tc = TEAMS.A.includes(pi)?'#00c47d':'#4a7fff';
+      const st = set.stats[k];
+      return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:6px;padding-bottom:6px;border-bottom:${pi<3?'1px solid rgba(255,255,255,0.05)':'none'}">
+        <span style="color:${tc};font-weight:600;min-width:80px">${dn(k)}</span>
+        <span style="display:flex;gap:6px">${Badge(st.winners,'#00c47d',true)}${Badge(st.faultsDirect,'#e84545',true)}${Badge(st.faultsForced,'#f5a623',true)}</span>
+      </div>`;
+    }).join('');
+    const totaux = ['A','B'].map(t=>`<span>Éq.${t}: W=${teamStat(set.stats,t,'winners')} FD=${teamStat(set.stats,t,'faultsDirect')} FP=${teamStat(set.stats,t,'faultsForced')}</span>`).join('');
+    return `<div style="background:rgba(255,255,255,0.04);border-radius:12px;padding:12px 14px">
+      <div style="font-family:Bebas Neue,sans-serif;font-size:17px;letter-spacing:2px;color:#ffd700;margin-bottom:10px">SET ${si+1} — ${set.scoreA} / ${set.scoreB}</div>
+      ${rows}
+      <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:#555">${totaux}</div>
+    </div>`;
+  }).join('');
+
+  // Classement
+  const ranked = [...global].sort((a,b)=>b.w-a.w).map((g,rank)=>{
+    const pi = KEYS.indexOf(g.key);
+    const tc = TEAMS.A.includes(pi)?'#00c47d':'#4a7fff';
+    return `<div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;border-left:4px solid ${tc}">
+      <span style="font-family:Bebas Neue,sans-serif;font-size:18px;color:${tc};min-width:24px">#${rank+1}</span>
+      <span style="flex:1;font-weight:600;font-size:14px">${dn(g.key)}</span>
+      <span style="display:flex;gap:6px;align-items:center">${Badge(g.w,'#00c47d',true)}${Badge(g.fd,'#e84545',true)}${Badge(g.ff,'#f5a623',true)}<span style="color:#555;font-size:11px">${g.pct}%</span></span>
+    </div>`;
+  }).join('');
+
+  // Highlights
+  const mvp = [...global].sort((a,b)=>b.w-a.w)[0];
+  const mostFD = [...global].sort((a,b)=>b.fd-a.fd)[0];
+  const mostFF = [...global].sort((a,b)=>b.ff-a.ff)[0];
+  const highlights = [
+    {label:'🏆 MVP',sub:`${mvp.w} winners`,key:mvp.key,color:'#00c47d'},
+    {label:'✖ Fautes dir.',sub:`${mostFD.fd} fautes`,key:mostFD.key,color:'#e84545'},
+    {label:'⚡ + Prov.',sub:`${mostFF.ff} prov.`,key:mostFF.key,color:'#f5a623'},
+  ].map(({label,sub,key,color})=>`<div style="background:${color}14;border:1.5px solid ${color}44;border-radius:12px;padding:10px">
+    <div style="font-size:10px;color:${color};letter-spacing:1px;margin-bottom:3px">${label}</div>
+    <div style="font-family:Bebas Neue,sans-serif;font-size:17px">${dn(key)}</div>
+    <div style="font-size:11px;color:#888;margin-top:2px">${sub}</div>
+  </div>`).join('');
+
+  return `<div style="max-width:480px;margin:0 auto;padding:24px 20px 60px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <button onclick="setState({view:'match'})" style="background:transparent;border:1px solid #222;border-radius:8px;color:#555;font-family:Bebas Neue,sans-serif;font-size:13px;letter-spacing:1px;padding:7px 13px;cursor:pointer">← MATCH</button>
+      <span style="font-family:Bebas Neue,sans-serif;font-size:14px;color:#444;letter-spacing:1px">PADEL TRACKER</span>
+    </div>
+    <h2 style="font-family:Bebas Neue,sans-serif;font-size:26px;letter-spacing:3px;color:#ffd700;margin-bottom:20px">📊 ANALYSE FINALE</h2>
+    <!-- Légende -->
+    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+      ${STAT_TYPES.map(({icon,label,color,desc})=>`<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#555"><span style="color:${color};font-weight:700">${icon}</span><span>${label.split(' ')[0]} = ${desc}</span></div>`).join('')}
+    </div>
+    <!-- Équipes -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px">${teamCards}</div>
+    <!-- IA -->
+    ${aiSection}
+    <!-- Par set -->
+    <h3 style="font-family:Bebas Neue,sans-serif;letter-spacing:2px;color:#bbb;margin-bottom:10px;font-size:16px">DÉTAIL PAR SET</h3>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:22px">${setsDetail}</div>
+    <!-- Classement -->
+    <h3 style="font-family:Bebas Neue,sans-serif;letter-spacing:2px;color:#bbb;margin-bottom:10px;font-size:16px">CLASSEMENT JOUEURS</h3>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:22px">${ranked}</div>
+    <!-- Highlights -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">${highlights}</div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MOTEUR DE RENDU
+// ═══════════════════════════════════════════════════════════════
+function escHtml(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function render() {
+  const s = getState();
+  let html = '';
+  if (s.view === 'setup')    html = renderSetup();
+  else if (s.view === 'match')    html = renderMatch();
+  else if (s.view === 'analysis') html = renderAnalysis();
+
+  document.getElementById('app').innerHTML = html;
+
+  // Rebrancher les inputs (setup)
+  document.querySelectorAll('[data-input]').forEach(el => {
+    el.addEventListener('input', e => {
+      const k = e.target.getAttribute('data-input');
+      setState(s => ({ names: {...s.names, [k]: e.target.value} }));
+    });
+  });
+
+  // Scroll en haut si changement de vue
+  window.scrollTo(0,0);
+}
+
+_render = render;
+
+// Exposer les fonctions au HTML
+window.setState    = setState;
+window.updateStat  = updateStat;
+window.undoStat    = undoStat;
+window.updateScore = updateScore;
+window.addSet      = addSet;
+window.runAIAnalysis = runAIAnalysis;
+window.handleStart = () => {
+  const s = getState();
+  const allFilled = KEYS.every(k => s.names[k].trim().length > 0);
+  if (allFilled) setState({ view:'match' });
+};
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+_state = {
+  view: 'setup',
+  names: { P1:'', P2:'', P3:'', P4:'' },
+  sets: [emptySet()],
+  currentSet: 0,
+  aiLoading: false,
+  aiDone: false,
+  aiResults: {},
+};
+render();
+
+// Bannière installation iPhone
+window.addEventListener('load', () => {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone;
+  if (isIOS && !isStandalone) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1a1a2e;border-top:1px solid #ffd70033;padding:12px 16px 20px;display:flex;align-items:center;gap:12px;z-index:9999;font-size:13px;color:#ccc';
+    banner.innerHTML = `
+      <span style="font-size:24px">📲</span>
+      <div>
+        <div style="color:#ffd700;font-family:Bebas Neue,sans-serif;font-size:15px;letter-spacing:1px">INSTALLER SUR VOTRE IPHONE</div>
+        <div style="color:#888;font-size:12px">Appuyez sur <strong style="color:#4a9eff">Partager ↑</strong> puis <strong style="color:#4a9eff">"Sur l'écran d'accueil"</strong></div>
+      </div>
+      <button onclick="this.parentElement.remove()" style="margin-left:auto;background:transparent;border:none;color:#555;font-size:20px;cursor:pointer;padding:4px">✕</button>
+    `;
+    document.body.appendChild(banner);
+  }
+});
+</script>
+</body>
+</html>
