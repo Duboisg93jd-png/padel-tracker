@@ -106,9 +106,31 @@ input[type=text]:focus{border-color:#ffd70088}
 
 <!-- ═══ MATCH HOME ═══ -->
 <div id="screen-match-home" class="screen active">
-  <div class="bebas gold" style="font-size:48px">PADEL</div>
-  <div style="font-size:13px;color:#555;letter-spacing:2px">MATCH TRACKER</div>
-  <div class="divider"></div>
+  <!-- Header bleu avec raquette -->
+  <div style="background:#1e90ff;margin:-20px -16px 20px;padding:28px 20px 24px;border-radius:0 0 24px 24px;text-align:center">
+    <svg viewBox="0 0 120 100" width="120" height="100" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto 10px">
+      <!-- Raquette -->
+      <rect x="20" y="5" width="58" height="64" rx="18" fill="#1a1a1a"/>
+      <rect x="20" y="5" width="58" height="64" rx="18" fill="none" stroke="#e84545" stroke-width="5"/>
+      <!-- Cordage H -->
+      <line x1="24" y1="22" x2="74" y2="22" stroke="#e84545" stroke-width="2.5"/>
+      <line x1="24" y1="33" x2="74" y2="33" stroke="#e84545" stroke-width="2.5"/>
+      <line x1="24" y1="44" x2="74" y2="44" stroke="#e84545" stroke-width="2.5"/>
+      <line x1="24" y1="55" x2="74" y2="55" stroke="#e84545" stroke-width="2.5"/>
+      <!-- Cordage V -->
+      <line x1="37" y1="7" x2="37" y2="67" stroke="#e84545" stroke-width="2.5"/>
+      <line x1="49" y1="6" x2="49" y2="68" stroke="#e84545" stroke-width="2.5"/>
+      <line x1="61" y1="7" x2="61" y2="67" stroke="#e84545" stroke-width="2.5"/>
+      <!-- Manche -->
+      <rect x="37" y="68" width="24" height="26" rx="6" fill="#1a1a1a" stroke="#e84545" stroke-width="4"/>
+      <!-- Balle -->
+      <circle cx="96" cy="22" r="16" fill="#ffd700"/>
+      <path d="M83 14 Q96 22 109 14" fill="none" stroke="#e6a800" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M83 30 Q96 22 109 30" fill="none" stroke="#e6a800" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+    <div class="bebas" style="font-size:32px;color:#fff;letter-spacing:4px">PADEL TRACKER</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.7);letter-spacing:2px">SUIVI DE MATCH</div>
+  </div>
   <p style="color:#666;font-size:13px;margin-bottom:20px">Entrez le prénom des 4 joueurs avant de commencer.</p>
 
   <div style="margin-bottom:16px">
