@@ -275,6 +275,7 @@ input[type=text]:focus{border-color:#1e90ff88}
 // ── Config JSONBin ────────────────────────────────────────────
 const JSONBIN_KEY = '$2a$10$uijjjPXZWCXderNUD7if6.YSuCRqhzGgPbRQSQEDyDHRofCQ7ezH';
 const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
+const PROXY = 'https://corsproxy.io/?url=';
 
 // ── Constantes ────────────────────────────────────────────────
 const TEAMS={A:[0,1],B:[2,3]};
@@ -318,7 +319,7 @@ function saveBins(b){localStorage.setItem('padel_bins',JSON.stringify(b));}
 // ── JSONBin API ───────────────────────────────────────────────
 async function createBin(data){
   try{
-    const res=await fetch(JSONBIN_URL,{
+    const res=await fetch(PROXY+encodeURIComponent(JSONBIN_URL),{
       method:'POST',
       headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Private':'false','X-Bin-Name':data.code},
       body:JSON.stringify(data)
@@ -330,7 +331,7 @@ async function createBin(data){
 
 async function updateBin(id,data){
   try{
-    await fetch(`${JSONBIN_URL}/${id}`,{
+    await fetch(PROXY+encodeURIComponent(JSONBIN_URL+'/'+id),{
       method:'PUT',
       headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY},
       body:JSON.stringify(data)
@@ -340,7 +341,7 @@ async function updateBin(id,data){
 
 async function getBin(id){
   try{
-    const res=await fetch(`${JSONBIN_URL}/${id}/latest`,{headers:{'X-Master-Key':JSONBIN_KEY}});
+    const res=await fetch(PROXY+encodeURIComponent(JSONBIN_URL+'/'+id+'/latest'),{headers:{'X-Master-Key':JSONBIN_KEY}});
     const json=await res.json();
     return json.record||null;
   }catch(e){console.error('getBin',e);return null;}
